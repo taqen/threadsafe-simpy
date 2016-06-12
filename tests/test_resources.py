@@ -39,6 +39,10 @@ def test_resource(env, log):
     assert log == [('a', 1), ('b',  2)]
 
 
+def test_resource_capacity(env):
+    pytest.raises(ValueError, simpy.Resource, env, 0)
+
+
 def test_resource_context_manager(env, log):
     """The event that ``Resource.request()`` returns can be used as
     Context Manager."""
@@ -321,6 +325,50 @@ def test_mixed_preemption(env, log):
 
     assert log == [(1, 1, (p3, 0)), (5, 0), (6, 3), (10, 2), (11, 4)]
 
+def test_nested_preemption(env, log):
+    def process(id, env, res, delay, prio, preempt, log):
+        yield env.timeout(delay)
+        with res.request(priority=prio, preempt=preempt) as req:
+            try:
+                yield req
+                yield env.timeout(5)
+                log.append((env.now, id))
+            except simpy.Interrupt as ir:
+                log.append((env.now, id, (ir.cause.by, ir.cause.usage_since)))
+
+    def process2(id, env, res0, res1, delay, prio, preempt, log):
+        yield env.timeout(delay)
+        with res0.request(priority=prio, preempt=preempt) as req0:
+            try:
+                yield req0
+                with res1.request(priority=prio, preempt=preempt) as req1:
+                    try:
+                        yield req1
+                        yield env.timeout(5)
+                        log.append((env.now, id))
+                    except simpy.Interrupt as ir:
+                        log.append((env.now, id, (ir.cause.by,
+                            ir.cause.usage_since, ir.cause.resource)))
+            except simpy.Interrupt as ir:
+                log.append((env.now, id, (ir.cause.by, ir.cause.usage_since,
+                    ir.cause.resource)))
+
+    res0 = simpy.PreemptiveResource(env, 1)
+    res1 = simpy.PreemptiveResource(env, 1)
+
+    env.process(process2(0, env, res0, res1, 0, -1, True, log))
+    p1 = env.process(process (1, env, res1, 1, -2, True, log))
+
+    env.process(process2(2, env, res0, res1, 20, -1, True, log))
+    p3 = env.process(process (3, env, res0, 21, -2, True, log))
+
+    env.process(process2(4, env, res0, res1, 21, -1, True, log))
+
+    env.run()
+
+    assert log == [(1, 0, (p1, 0, res1)), (6, 1), (21, 2, (p3, 20, res0)),
+        (26, 3), (31, 4)]
+
 #
 # Tests for Container
 #
@@ -384,6 +432,12 @@ def test_initial_container_capacity(env):
     assert container.capacity == float('inf')
 
 
+def test_container_get_put_bounds(env):
+    container = simpy.Container(env)
+    pytest.raises(ValueError, container.get, -13)
+    pytest.raises(ValueError, container.put, -13)
+
+
 @pytest.mark.parametrize(('error', 'args'), [
     (None, [2, 1]),  # normal case
     (None, [1, 1]),  # init == capacity should be valid
@@ -439,9 +493,70 @@ def test_initial_store_capacity(env, Store):
 
 
 def test_store_capacity(env):
-    simpy.Store(env, 1)
     pytest.raises(ValueError, simpy.Store, env, 0)
     pytest.raises(ValueError, simpy.Store, env, -1)
+
+    capacity = 2
+    store = simpy.Store(env, capacity)
+    env.process((store.put(i) for i in range(capacity + 1)))
+    env.run()
+
+    # Ensure store is filled to capacity
+    assert len(store.items) == capacity
+
+
+def test_store_cancel(env):
+    store = simpy.Store(env, capacity=1)
+
+    def acquire_implicit_cancel():
+        with store.get():
+            yield env.timeout(1)
+            # implicit cancel() when exiting with-block
+
+    env.process(acquire_implicit_cancel())
+    env.run()
+
+
+def test_priority_store_item_priority(env):
+    pstore = simpy.PriorityStore(env, 3)
+    log = []
+
+    def getter(wait):
+        yield env.timeout(wait)
+        item = yield pstore.get()
+        log.append(item)
+
+    # Do not specify priority; the items themselves will be compared to
+    # determine priority.
+    env.process((pstore.put(s) for s in 'bcadefg'))
+    env.process(getter(1))
+    env.process(getter(2))
+    env.process(getter(3))
+    env.run()
+    assert log == ['a', 'b', 'c']
+
+
+def test_priority_store_stable_order(env):
+    pstore = simpy.PriorityStore(env, 3)
+    log = []
+
+    def getter(wait):
+        yield env.timeout(wait)
+        _, item = yield pstore.get()
+        log.append(item)
+
+    items = [object() for _ in range(3)]
+
+    # Unorderable items are inserted with same priority.
+    env.process((pstore.put(simpy.PriorityItem(0, item)) for item in items))
+    env.process(getter(1))
+    env.process(getter(2))
+    env.process(getter(3))
+    env.run()
+
+    # Since the priorities were the same for all items, ensure that items are
+    # retrieved in insertion order.
+    assert log == items
 
 
 def test_filter_store(env):

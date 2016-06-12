@@ -91,7 +91,7 @@ waiting for 3 time steps, it interrupts that process.
 
 Interrupts are thrown into process functions as :exc:`~simpy.events.Interrupt`
 exceptions that can (should) be handled by the interrupted process. The process
-can than decide what to do next (e.g., continuing to wait for the original
+can then decide what to do next (e.g., continuing to wait for the original
 event or yielding a new event)::
 
     >>> class Car(object):
@@ -107,7 +107,7 @@ event or yielding a new event)::
     ...             try:
     ...                 yield self.env.process(self.charge(charge_duration))
     ...             except simpy.Interrupt:
-    ...                 # When we received an interrupt, we stop charing and
+    ...                 # When we received an interrupt, we stop charging and
     ...                 # switch to the "driving" state
     ...                 print('Was interrupted. Hope, the battery is full enough ...')
     ...

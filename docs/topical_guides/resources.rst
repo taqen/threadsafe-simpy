@@ -27,7 +27,7 @@ a container with a, usually limited, *capacity*. Processes can either try to
 *put* something into the resource or try to *get* something out. If the
 resource is full or empty, they have to *queue* up and wait.
 
-This is roughly, how every resource looks like::
+This is roughly how every resource looks::
 
    BaseResource(capacity):
       put_queue
@@ -36,7 +36,7 @@ This is roughly, how every resource looks like::
       put(): event
       get(): event
 
-Every resources a maximum capacity and two queues, one for processes that want
+Every resource has a maximum capacity and two queues: one for processes that want
 to put something into it and one for processes that want to get something out.
 The ``put()`` and ``get()`` methods both return an event that is triggered when
 the corresponding action was successful.
@@ -79,8 +79,8 @@ resources to become a user (or to "own" them) and have to *release* them once
 they are done (e.g., vehicles arrive at the gas station, use a fuel-pump, if
 one is available, and leave when they are done).
 
-Requesting a resources is modeled as "putting a process' token into the
-resources" and releasing a resources correspondingly as "getting a process'
+Requesting a resource is modeled as "putting a process' token into the
+resource" and releasing a resource correspondingly as "getting a process'
 token out of the resource". Thus, calling ``request()``/``release()`` is
 equivalent to calling ``put()``/``get()``. Releasing a resource will always
 succeed immediately.
@@ -105,7 +105,7 @@ Instead of just counting its current users, it stores the request event as an
 "access token" for each user. This is, for example, useful for adding
 preemption (see below).
 
-Here is as basic example for using a resource:
+Here is a basic example for using a resource:
 
 .. code-block:: python
 
@@ -137,8 +137,8 @@ request events can be used as context manager:
    >>> user = env.process(resource_user(env, res))
    >>> env.run()
 
-Resources allow you retrieve the list of users and queued as well as the
-number of users and resource's capacity:
+Resources allow you to retrieve lists of the current users or queued users,
+the number of current users and the resource's capacity:
 
 .. code-block:: python
 
@@ -189,7 +189,7 @@ requests will gain access to the resource earlier than less important ones.
 Priority is expressed by integer numbers; smaller numbers mean a higher
 priority.
 
-Apart form that, it works like a normal *Resource*:
+Apart from that, it works like a normal *Resource*:
 
 .. code-block:: python
 
@@ -262,7 +262,7 @@ preempt another resource user. It will still be put in the queue according to
 its priority, though.
 
 The implementation of *PreemptiveResource* values priorities higher than
-preemption. That means preempt request are not allowed to cheat and jump over
+preemption. That means preempt requests are not allowed to cheat and jump over
 a higher prioritized request. The following example shows that preemptive low
 priority requests cannot queue-jump over high priority requests:
 
@@ -409,7 +409,9 @@ Using Stores you can model the production and consumption of concrete objects
 Store can even contain multiple types of objects.
 
 Beside :class:`Store`, there is a :class:`FilterStore` that lets you use
-a custom function to filter the objects you get out of the store.
+a custom function to filter the objects you get out of the store and
+:class:`PriorityStore` where items come out of the store in priority
+order.
 
 Here is a simple example modelling a generic producer/consumer scenario:
 
@@ -483,3 +485,40 @@ a *Resource* are not what you need:
    0 released Machine(size=1, duration=2) at 2
    2 got Machine(size=1, duration=2) at 2
    2 released Machine(size=1, duration=2) at 4
+
+With a :class:`PriorityStore`, we can model items of differing
+priorities. In the following example, an inspector process finds and
+logs issues that a separate maintainer process repairs in priority
+order.
+
+.. code-block:: python
+
+  >>> env = simpy.Environment()
+  >>> issues = simpy.PriorityStore(env)
+  >>>
+  >>> def inspector(env, issues):
+  ...     for issue in [simpy.PriorityItem('P2', '#0000'),
+  ...                   simpy.PriorityItem('P0', '#0001'),
+  ...                   simpy.PriorityItem('P3', '#0002'),
+  ...                   simpy.PriorityItem('P1', '#0003')]:
+  ...         yield env.timeout(1)
+  ...         print(env.now, 'log', issue)
+  ...         yield issues.put(issue)
+  >>>
+  >>> def maintainer(env, issues):
+  ...     while True:
+  ...         yield env.timeout(3)
+  ...         issue = yield issues.get()
+  ...         print(env.now, 'repair', issue)
+  >>>
+  >>> _ = env.process(inspector(env, issues))
+  >>> _ = env.process(maintainer(env, issues))
+  >>> env.run()
+  1 log PriorityItem(priority='P2', item='#0000')
+  2 log PriorityItem(priority='P0', item='#0001')
+  3 log PriorityItem(priority='P3', item='#0002')
+  3 repair PriorityItem(priority='P0', item='#0001')
+  4 log PriorityItem(priority='P1', item='#0003')
+  6 repair PriorityItem(priority='P1', item='#0003')
+  9 repair PriorityItem(priority='P2', item='#0000')
+  12 repair PriorityItem(priority='P3', item='#0002')
