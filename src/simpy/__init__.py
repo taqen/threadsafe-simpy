@@ -16,8 +16,8 @@ from simpy.events import Event, Timeout, Process, AllOf, AnyOf, Interrupt
 from simpy.resources.resource import (
     Resource, PriorityResource, PreemptiveResource)
 from simpy.resources.container import Container
-from simpy.resources.store import Store, FilterStore
-from simpy.util import test
+from simpy.resources.store import (
+    Store, PriorityItem, PriorityStore, FilterStore)
 
 
 def compile_toc(entries, section_marker='='):
@@ -41,15 +41,13 @@ toc = (
     )),
     ('Resources', (
         Resource, PriorityResource, PreemptiveResource, Container, Store,
-        FilterStore,
-    )),
-    ('Miscellaneous', (
-        test,
+        PriorityItem, PriorityStore, FilterStore,
     )),
 )
 
 # Use the toc to keep the documentation and the implementation in sync.
-__doc__ = __doc__.format(toc=compile_toc(toc))
+if __doc__:
+    __doc__ = __doc__.format(toc=compile_toc(toc))
 __all__ = [obj.__name__ for section, objs in toc for obj in objs]
 
 __path__ = extend_path(__path__, __name__)
