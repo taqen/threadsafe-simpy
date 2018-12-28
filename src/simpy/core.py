@@ -3,7 +3,7 @@ Core components for event-discrete simulation environments.
 
 """
 import types
-from heapq import heappush, heappop
+from queue import PriorityQueue as Queue, Empty
 from itertools import count
 
 from simpy.exceptions import StopProcess
@@ -168,7 +168,7 @@ class Environment(BaseEnvironment):
     """
     def __init__(self, initial_time=0):
         self._now = initial_time
-        self._queue = []  # The list of all currently scheduled events.
+        self._queue = Queue()  # The list of all currently scheduled events.
         self._eid = count()  # Counter for event IDs
         self._active_proc = None
 
@@ -178,7 +178,9 @@ class Environment(BaseEnvironment):
     @property
     def now(self):
         """The current simulation time."""
-        return self._now
+        with self._queue.mutex:
+            now = self._now
+        return now
 
     @property
     def active_process(self):
@@ -193,16 +195,16 @@ class Environment(BaseEnvironment):
 
     def schedule(self, event, priority=NORMAL, delay=0):
         """Schedule an *event* with a given *priority* and a *delay*."""
-        heappush(self._queue,
-                 (self._now + delay, priority, next(self._eid), event))
+        self._queue.put((self._now + delay, priority, next(self._eid), event))
 
     def peek(self):
         """Get the time of the next scheduled event. Return
         :data:`~simpy.core.Infinity` if there is no further event."""
-        try:
-            return self._queue[0][0]
-        except IndexError:
-            return Infinity
+        with self._queue.mutex:
+            try:
+                return self._queue.queue[0][0]
+            except IndexError:
+                return Infinity
 
     def step(self):
         """Process the next event.
@@ -211,10 +213,11 @@ class Environment(BaseEnvironment):
 
         """
         try:
-            self._now, _, _, event = heappop(self._queue)
-        except IndexError:
+            self._now, _, _, event = self._queue.get(block=False)
+        except (IndexError, Empty):
             raise EmptySchedule()
 
+        print("Got {}".format(self._now))
         # Process callbacks of the event. Set the events callbacks to None
         # immediately to prevent concurrent modifications.
         callbacks, event.callbacks = event.callbacks, None
