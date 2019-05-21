@@ -11,7 +11,7 @@ filelock==3.0.10
 flake8==3.6.0
 idna==2.7
 imagesize==1.1.0
-Jinja2==2.10
+Jinja2>=2.10.1
 MarkupSafe==1.1.0
 mccabe==0.6.1
 more-itertools==4.3.0
@@ -40,6 +40,6 @@ toml==0.10.0
 tox==3.5.3
 tqdm==4.28.1
 twine==1.12.1
-urllib3==1.24.1
+urllib3>=1.24.1
 virtualenv==16.1.0
 webencodings==0.5.1
